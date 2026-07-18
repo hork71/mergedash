@@ -1,0 +1,12 @@
+{
+  "name": "mergedash",
+  "version": "1.0.0",
+  "description": "Dashboard for GitLab merge request results stored in PostgreSQL",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "pg": "^8.11.0"
+  }
+}
