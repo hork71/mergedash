@@ -92,6 +92,7 @@
   }
   table {
     width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
     background: var(--card);
     border: 1px solid var(--border);
@@ -102,7 +103,9 @@
     text-align: left;
     padding: .5rem .75rem;
     border-bottom: 1px solid var(--border);
-    vertical-align: top;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   tr:last-child td { border-bottom: none; }
   th {
@@ -112,8 +115,8 @@
     color: var(--muted);
     background: var(--bg);
   }
-  td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  td.date { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.date { font-variant-numeric: tabular-nums; }
   .state {
     display: inline-block;
     padding: .05rem .55rem;
@@ -289,7 +292,7 @@
         <td class="num">${r.web_url
           ? `<a href="${esc(r.web_url)}" target="_blank" rel="noopener">!${esc(r.iid)}</a>`
           : `!${esc(r.iid)}`}</td>
-        <td>${esc(r.title)}</td>
+        <td title="${esc(r.title)}">${esc(r.title)}</td>
         <td>${stateBadge(r.state)}</td>
         <td>${esc(r.author)}</td>
         <td class="date">${esc(r.created_at)}</td>
@@ -301,6 +304,16 @@
     return `
       <h2 class="month">${esc(month)} (${rows.length} MR${rows.length === 1 ? '' : 's'})</h2>
       <table>
+        <colgroup>
+          <col style="width:6%">
+          <col style="width:30%">
+          <col style="width:8%">
+          <col style="width:13%">
+          <col style="width:8%">
+          <col style="width:8%">
+          <col style="width:13.5%">
+          <col style="width:13.5%">
+        </colgroup>
         <thead><tr>
           <th>MR</th><th>Title</th><th>State</th><th>Author</th>
           <th>Created</th><th>Merged</th><th>Merged by</th><th>Approved by</th>
