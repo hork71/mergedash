@@ -49,7 +49,7 @@ function dbStore() {
         .rows.map((r) => r.month),
     merges: async (project, from, to) =>
       (await pool.query(
-        `SELECT month, iid, title, state, author,
+        `SELECT month, iid, title, source_branch, target_branch, state, author,
                 to_char(created_at, 'YYYY-MM-DD') AS created_at,
                 to_char(merged_at, 'YYYY-MM-DD')  AS merged_at,
                 merged_by, approved_by, web_url

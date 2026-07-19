@@ -87,3 +87,14 @@ psql -d yourdb -f table.sql
 
 Note: the month range filter compares the `month` column as text, which is
 correct as long as months are stored in a sortable `YYYY-MM` format.
+
+## Four-eyes check for production merges
+
+Each MR carries its `source_branch` and `target_branch` (as reported by the
+GitLab API). For MRs merged into the production branch, the author and the
+person who merged must be different people: violations are marked with a
+"⚠ self-merged" badge on the *Merged by* cell and counted in the status
+line. Which branch names count as production is configured in the
+`PRODUCTION_BRANCHES` constant at the top of the script in
+`public/index.html` (default: `['production']`). Existing databases need the
+two extra columns — see the `ALTER TABLE` comment in `table.sql`.

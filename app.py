@@ -79,7 +79,7 @@ class DbStore:
     def merges(self, project, date_from, date_to):
         rows = self._query(
             """
-            SELECT month, iid, title, state, author,
+            SELECT month, iid, title, source_branch, target_branch, state, author,
                    to_char(created_at, 'YYYY-MM-DD') AS created_at,
                    to_char(merged_at, 'YYYY-MM-DD')  AS merged_at,
                    merged_by, approved_by, web_url
@@ -89,8 +89,9 @@ class DbStore:
             """,
             (project, date_from, date_to),
         )
-        cols = ("month", "iid", "title", "state", "author",
-                "created_at", "merged_at", "merged_by", "approved_by", "web_url")
+        cols = ("month", "iid", "title", "source_branch", "target_branch",
+                "state", "author", "created_at", "merged_at", "merged_by",
+                "approved_by", "web_url")
         return [dict(zip(cols, r)) for r in rows]
 
 

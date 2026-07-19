@@ -130,6 +130,16 @@
   .state-opened { background: var(--opened); }
   .state-closed { background: var(--closed); }
   .state-other  { background: var(--muted); }
+  .warn {
+    display: inline-block;
+    padding: .05rem .55rem;
+    border-radius: 999px;
+    font-size: .78rem;
+    font-weight: 600;
+    color: #fff;
+    background: var(--closed);
+    cursor: help;
+  }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
   .empty { color: var(--muted); font-style: italic; }
@@ -167,6 +177,17 @@
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
+
+  // Merges into these branches must follow the four-eyes rule:
+  // the author and the person merging must be different people.
+  const PRODUCTION_BRANCHES = ['production'];
+
+  function isSelfMergedToProd(r) {
+    return r.state === 'merged'
+      && PRODUCTION_BRANCHES.includes(r.target_branch)
+      && r.author != null
+      && r.author === r.merged_by;
+  }
 
   function esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, (c) => ({
@@ -287,35 +308,43 @@
   }
 
   function renderMonth(month, rows) {
-    const body = rows.map((r) => `
+    const body = rows.map((r) => {
+      const branches = `${r.source_branch ?? ''} → ${r.target_branch ?? ''}`;
+      const selfMerged = isSelfMergedToProd(r);
+      return `
       <tr>
         <td class="num">${r.web_url
           ? `<a href="${esc(r.web_url)}" target="_blank" rel="noopener">!${esc(r.iid)}</a>`
           : `!${esc(r.iid)}`}</td>
         <td title="${esc(r.title)}">${esc(r.title)}</td>
         <td>${stateBadge(r.state)}</td>
+        <td title="${esc(branches)}">${esc(branches)}</td>
         <td>${esc(r.author)}</td>
         <td class="date">${esc(r.created_at)}</td>
         <td class="date">${esc(r.merged_at)}</td>
-        <td>${esc(r.merged_by)}</td>
+        <td>${esc(r.merged_by)}${selfMerged
+          ? ' <span class="warn" title="Merged into production by the author — four-eyes rule violated">⚠ self-merged</span>'
+          : ''}</td>
         <td>${esc(r.approved_by)}</td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
 
     return `
       <h2 class="month">${esc(month)} (${rows.length} MR${rows.length === 1 ? '' : 's'})</h2>
       <table>
         <colgroup>
-          <col style="width:6%">
-          <col style="width:30%">
-          <col style="width:8%">
-          <col style="width:13%">
-          <col style="width:8%">
-          <col style="width:8%">
+          <col style="width:5%">
+          <col style="width:22%">
+          <col style="width:7%">
+          <col style="width:14%">
+          <col style="width:11%">
+          <col style="width:7%">
+          <col style="width:7%">
           <col style="width:13.5%">
           <col style="width:13.5%">
         </colgroup>
         <thead><tr>
-          <th>MR</th><th>Title</th><th>State</th><th>Author</th>
+          <th>MR</th><th>Title</th><th>State</th><th>Branches</th><th>Author</th>
           <th>Created</th><th>Merged</th><th>Merged by</th><th>Approved by</th>
         </tr></thead>
         <tbody>${body}</tbody>
@@ -349,7 +378,12 @@
         byMonth.get(r.month).push(r);
       }
 
-      status.textContent = `${rows.length} merge request${rows.length === 1 ? '' : 's'} in ${project}`;
+      const violations = rows.filter(isSelfMergedToProd).length;
+      status.textContent =
+        `${rows.length} merge request${rows.length === 1 ? '' : 's'} in ${project}` +
+        (violations
+          ? ` — ⚠ ${violations} self-merged into production`
+          : '');
       results.innerHTML = [...byMonth.entries()]
         .map(([month, list]) => renderMonth(month, list)).join('');
     } catch (err) {
