@@ -84,6 +84,25 @@
   button:hover { filter: brightness(1.1); }
   main { padding: 0 2rem 2rem; }
   #status { color: var(--muted); margin: .5rem 0 1rem; }
+  #search-field { margin-bottom: .5rem; }
+  .search-box { position: relative; width: 100%; max-width: 26rem; }
+  .search-box input { width: 100%; padding-right: 2rem; }
+  #search-clear {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    width: 2rem;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--muted);
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+  #search-clear:hover { color: var(--fg); }
+  #filter-status { color: var(--muted); font-size: .85rem; margin: 0 0 1rem; }
   h2.month {
     font-size: 1rem;
     margin: 1.5rem 0 .5rem;
@@ -171,12 +190,24 @@
 
 <main>
   <div id="status"></div>
+  <div class="field" id="search-field">
+    <label for="search">Filter results</label>
+    <div class="search-box">
+      <input id="search" type="text" placeholder="Filter by title, author, branch, state…" autocomplete="off">
+      <button id="search-clear" type="button" title="Clear filter" hidden>&times;</button>
+    </div>
+  </div>
+  <div id="filter-status"></div>
   <div id="results"></div>
 </main>
 
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
+
+  // Rows from the most recent successful query, cached so the search box
+  // can filter client-side without another network request.
+  let lastRows = [];
 
   // Merges into these branches must follow the four-eyes rule:
   // the author and the person merging must be different people.
@@ -351,6 +382,46 @@
       </table>`;
   }
 
+  // Lowercase, space-joined text of every visible column for one row,
+  // used as the haystack for the search box.
+  function searchHaystack(r) {
+    return [
+      r.iid, r.title, r.state, r.source_branch, r.target_branch, r.author,
+      r.created_at, r.merged_at, r.merged_by, r.approved_by,
+    ].map((v) => (v ?? '')).join(' ').toLowerCase();
+  }
+
+  // Renders lastRows into #results, filtered by the given search term.
+  // Months with no matching rows are omitted entirely.
+  function renderFiltered(term) {
+    const results = $('results');
+    const filterStatus = $('filter-status');
+    const needle = term.trim().toLowerCase();
+
+    const matched = needle
+      ? lastRows.filter((r) => searchHaystack(r).includes(needle))
+      : lastRows;
+
+    filterStatus.textContent = needle
+      ? `Showing ${matched.length} of ${lastRows.length} merge requests`
+      : '';
+
+    if (!matched.length) {
+      results.innerHTML = '<p class="empty">No merge requests found for this selection.</p>';
+      return;
+    }
+
+    // Group by month (already sorted newest month first by the server).
+    const byMonth = new Map();
+    for (const r of matched) {
+      if (!byMonth.has(r.month)) byMonth.set(r.month, []);
+      byMonth.get(r.month).push(r);
+    }
+
+    results.innerHTML = [...byMonth.entries()]
+      .map(([month, list]) => renderMonth(month, list)).join('');
+  }
+
   async function go() {
     const project = $('project').value.trim();
     const from = $('from').value;
@@ -362,20 +433,16 @@
     if (from > to) { status.textContent = 'Start month is after end month.'; return; }
 
     status.textContent = 'Loading…';
+    $('filter-status').textContent = '';
     results.innerHTML = '';
     try {
       const rows = await fetchJson('/api/merges?' + new URLSearchParams({ project, from, to }));
+      lastRows = rows;
+
       if (!rows.length) {
         status.textContent = '';
         results.innerHTML = '<p class="empty">No merge requests found for this selection.</p>';
         return;
-      }
-
-      // Group rows by month (already sorted newest month first by the server).
-      const byMonth = new Map();
-      for (const r of rows) {
-        if (!byMonth.has(r.month)) byMonth.set(r.month, []);
-        byMonth.get(r.month).push(r);
       }
 
       const violations = rows.filter(isSelfMergedToProd).length;
@@ -384,15 +451,26 @@
         (violations
           ? ` — ⚠ ${violations} self-merged into production`
           : '');
-      results.innerHTML = [...byMonth.entries()]
-        .map(([month, list]) => renderMonth(month, list)).join('');
+      renderFiltered($('search').value);
     } catch (err) {
       status.textContent = 'Error: ' + err.message;
     }
   }
 
   $('go').addEventListener('click', go);
-  document.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+  $('search').addEventListener('input', () => {
+    $('search-clear').hidden = !$('search').value;
+    renderFiltered($('search').value);
+  });
+  $('search-clear').addEventListener('click', () => {
+    $('search').value = '';
+    $('search-clear').hidden = true;
+    renderFiltered('');
+    $('search').focus();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target !== $('search')) go();
+  });
 
   init();
 })();
