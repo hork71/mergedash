@@ -1,3 +1,5 @@
 flask>=3.0
 # Only needed when running against PostgreSQL (USE_DB=1):
 psycopg2-binary>=2.9
+# Only needed when AD authentication is enabled (USE_LDAP=1):
+ldap3>=2.9

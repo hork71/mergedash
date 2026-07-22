@@ -25,8 +25,21 @@
   }
   header {
     padding: 1.25rem 2rem 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
   }
   h1 { margin: 0 0 1rem; font-size: 1.3rem; }
+  #logout-form button {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: .3rem .7rem;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: .85rem;
+  }
+  #logout-form button:hover { color: var(--fg); border-color: var(--fg); }
   .controls {
     display: flex;
     flex-wrap: wrap;
@@ -166,7 +179,12 @@
 </head>
 <body>
 
-<header><h1>Merge Request Dashboard</h1></header>
+<header>
+  <h1>Merge Request Dashboard</h1>
+  <form id="logout-form" method="post" action="/logout">
+    <button type="submit">Sign out</button>
+  </form>
+</header>
 
 <div class="controls">
   <div class="field">

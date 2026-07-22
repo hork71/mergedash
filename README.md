@@ -69,6 +69,42 @@ USE_DB=1 PGDATABASE=yourdb PGUSER=youruser PGPASSWORD=secret .venv/bin/python ap
 USE_DB=1 DATABASE_URL=postgres://user:pass@host/dbname .venv/bin/python app.py
 ```
 
+## Authentication (Flask version only)
+
+The Flask backend (`app.py`) can require sign-in against Active Directory
+before serving the dashboard or its API, using a service account to search
+AD and a required-group check. The Node.js version (`server.js`) has no
+authentication and is intended for local/demo use only — use the Flask
+version for any AD-integrated or production deployment.
+
+Set `USE_LDAP=1` plus:
+
+- `LDAP_SERVER` — AD host, e.g. `ldaps://ad.example.com:636`
+- `LDAP_BASE_DN` — search base, e.g. `DC=example,DC=com`
+- `LDAP_USER_ATTR` — attribute matched against the login username
+  (default `sAMAccountName`)
+- `LDAP_BIND_DN` / `LDAP_BIND_PASSWORD` — service account used to search AD
+- `LDAP_REQUIRED_GROUP_DN` — users must belong to this group (including via
+  nested groups) to be granted access
+- `LDAP_USE_SSL` — `1` (default) to use LDAPS, `0` for plaintext (test only)
+- `SECRET_KEY` — random secret used to sign the session cookie; required
+  whenever `USE_LDAP=1`
+
+```sh
+USE_LDAP=1 \
+LDAP_SERVER=ldaps://ad.example.com:636 \
+LDAP_BASE_DN="DC=example,DC=com" \
+LDAP_BIND_DN="CN=svc-mergedash,OU=Service Accounts,DC=example,DC=com" \
+LDAP_BIND_PASSWORD=secret \
+LDAP_REQUIRED_GROUP_DN="CN=Mergedash Users,OU=Groups,DC=example,DC=com" \
+SECRET_KEY=$(python3 -c "import secrets;print(secrets.token_hex(32))") \
+.venv/bin/python app.py
+```
+
+When `USE_LDAP` is unset (default), the app behaves exactly as before — no
+login is required. `USE_LDAP` and `USE_DB` are independent switches and can
+be combined (AD login + PostgreSQL data), or either can be used alone.
+
 ## API
 
 Both backends expose the same three endpoints:

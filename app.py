@@ -12,12 +12,182 @@ import json
 import os
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import (
+    Flask,
+    abort,
+    jsonify,
+    redirect,
+    render_template_string,
+    request,
+    send_from_directory,
+    session,
+    url_for,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 USE_DB = os.environ.get("USE_DB") == "1"
+USE_LDAP = os.environ.get("USE_LDAP") == "1"
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY")
+if USE_LDAP and not app.secret_key:
+    raise RuntimeError("SECRET_KEY must be set when USE_LDAP=1")
+
+
+# --- AD authentication (only touched when USE_LDAP=1) ---
+
+REQUIRED_GROUP_MATCH_RULE = "1.2.840.113556.1.4.803"  # AD: LDAP_MATCHING_RULE_IN_CHAIN
+PUBLIC_PATHS = {"/login", "/logout"}
+
+
+def _ldap_server():
+    from ldap3 import ALL, Server, Tls
+    import ssl
+
+    use_ssl = os.environ.get("LDAP_USE_SSL", "1") == "1"
+    tls = Tls(validate=ssl.CERT_REQUIRED) if use_ssl else None
+    return Server(os.environ["LDAP_SERVER"], use_ssl=use_ssl, tls=tls, get_info=ALL)
+
+
+def ldap_authenticate(username, password):
+    """Verify username/password against AD and required group membership.
+
+    Returns True iff the service account can search AD, exactly one user
+    matches, a bind as that user's own DN with `password` succeeds, and
+    that user is a member (including nested groups) of
+    LDAP_REQUIRED_GROUP_DN. Never raises — any failure yields False.
+    """
+    from ldap3 import Connection
+    from ldap3.core.exceptions import LDAPException
+    from ldap3.utils.conv import escape_filter_chars
+
+    user_attr = os.environ.get("LDAP_USER_ATTR", "sAMAccountName")
+    base_dn = os.environ["LDAP_BASE_DN"]
+    group_dn = os.environ["LDAP_REQUIRED_GROUP_DN"]
+
+    service_conn = None
+    user_conn = None
+    try:
+        service_conn = Connection(
+            _ldap_server(),
+            user=os.environ["LDAP_BIND_DN"],
+            password=os.environ["LDAP_BIND_PASSWORD"],
+            auto_bind=True,
+        )
+
+        service_conn.search(
+            search_base=base_dn,
+            search_filter=f"({user_attr}={escape_filter_chars(username)})",
+            attributes=["distinguishedName"],
+        )
+        if len(service_conn.entries) != 1:
+            return False
+        user_dn = service_conn.entries[0].entry_dn
+
+        user_conn = Connection(_ldap_server(), user=user_dn, password=password)
+        if not user_conn.bind():
+            return False
+
+        service_conn.search(
+            search_base=base_dn,
+            search_filter=(
+                f"(&(distinguishedName={escape_filter_chars(user_dn)})"
+                f"(memberOf:{REQUIRED_GROUP_MATCH_RULE}:="
+                f"{escape_filter_chars(group_dn)}))"
+            ),
+            attributes=["distinguishedName"],
+        )
+        return len(service_conn.entries) == 1
+    except LDAPException:
+        app.logger.exception("LDAP authentication error")
+        return False
+    finally:
+        if user_conn is not None:
+            user_conn.unbind()
+        if service_conn is not None:
+            service_conn.unbind()
+
+
+LOGIN_PAGE = """<!doctype html>
+<html>
+<head><title>mergedash &mdash; sign in</title>
+<style>
+  :root { --bg:#f6f7f9; --fg:#1c2430; --muted:#5b6572; --card:#fff; --border:#d9dee5; --accent:#1f6feb; }
+  body { margin:0; font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--fg);
+         display:flex; align-items:center; justify-content:center; min-height:100vh; }
+  form { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:2rem; width:300px; }
+  h1 { font-size:1.1rem; margin:0 0 1.25rem; }
+  label { display:block; font-size:.85rem; color:var(--muted); margin-bottom:.25rem; }
+  input { width:100%; padding:.5rem; margin-bottom:1rem; border:1px solid var(--border); border-radius:4px; box-sizing:border-box; }
+  button { width:100%; padding:.6rem; background:var(--accent); color:#fff; border:0; border-radius:4px; cursor:pointer; }
+  .error { color:#cf222e; font-size:.85rem; margin-bottom:1rem; }
+</style></head>
+<body>
+  <form method="post" action="/login">
+    <h1>mergedash</h1>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <label for="u">Username</label>
+    <input id="u" name="username" autofocus required>
+    <label for="p">Password</label>
+    <input id="p" name="password" type="password" required>
+    <input type="hidden" name="next" value="{{ next }}">
+    <button type="submit">Sign in</button>
+  </form>
+</body>
+</html>"""
+
+
+@app.before_request
+def require_login():
+    if not USE_LDAP or request.path in PUBLIC_PATHS:
+        return
+    if "username" in session:
+        return
+    if request.path.startswith("/api/"):
+        abort(401, description="authentication required")
+    return redirect(url_for("login", next=request.path))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not USE_LDAP:
+        abort(404)
+
+    if request.method == "GET":
+        return render_template_string(LOGIN_PAGE, error=None, next=request.args.get("next", "/"))
+
+    username = request.form.get("username", "")
+    password = request.form.get("password", "")
+    next_url = request.form.get("next") or "/"
+    if not next_url.startswith("/"):
+        next_url = "/"
+
+    if not username or not password:
+        return render_template_string(
+            LOGIN_PAGE, error="Username and password required.", next=next_url
+        ), 400
+
+    if ldap_authenticate(username, password):
+        session.clear()
+        session["username"] = username
+        return redirect(next_url)
+
+    return render_template_string(
+        LOGIN_PAGE, error="Invalid credentials or insufficient access.", next=next_url
+    ), 401
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    if not USE_LDAP:
+        abort(404)
+    session.clear()
+    return redirect(url_for("login"))
+
+
+@app.errorhandler(401)
+def handle_unauthorized(err):
+    return jsonify({"error": str(err.description or "authentication required")}), 401
 
 
 # --- data layer: both backends expose projects(), months(), merges() ---
