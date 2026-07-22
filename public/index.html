@@ -30,6 +30,12 @@
     align-items: baseline;
   }
   h1 { margin: 0 0 1rem; font-size: 1.3rem; }
+  #logout-form {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+  }
+  #logout-username { color: var(--muted); font-size: .85rem; }
   #logout-form button {
     background: none;
     border: 1px solid var(--border);
@@ -181,7 +187,8 @@
 
 <header>
   <h1>Merge Request Dashboard</h1>
-  <form id="logout-form" method="post" action="/logout">
+  <form id="logout-form" method="post" action="/logout" hidden>
+    <span id="logout-username"></span>
     <button type="submit">Sign out</button>
   </form>
 </header>
@@ -248,6 +255,19 @@
     const res = await fetch(url);
     if (!res.ok) throw new Error('Request failed: ' + res.status);
     return res.json();
+  }
+
+  async function initAuthUI() {
+    try {
+      const who = await fetchJson('/api/whoami');
+      if (who.username) {
+        $('logout-username').textContent = `Signed in as ${who.username}`;
+        $('logout-form').hidden = false;
+      }
+    } catch (err) {
+      // Not logged in (401) or backend has no /api/whoami — leave the
+      // sign-out control hidden.
+    }
   }
 
   async function init() {
@@ -490,6 +510,7 @@
     if (e.key === 'Enter' && e.target !== $('search')) go();
   });
 
+  initAuthUI();
   init();
 })();
 </script>

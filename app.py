@@ -52,13 +52,24 @@ def _ldap_server():
     use_ssl = os.environ.get("LDAP_USE_SSL", "1") == "1"
     tls = Tls(validate=ssl.CERT_REQUIRED) if use_ssl else None
 
-    # Strip any ldap(s):// scheme ourselves and pass a bare host[:port] —
-    # letting ldap3 parse a scheme+port URI itself has been observed to
-    # produce a malformed hostname that trips Python's IDNA/nameprep codec
-    # (the same "category() argument must be a unicode character" error).
+    # Strip any ldap(s):// scheme ourselves and pass a bare host[:port].
     raw = os.environ["LDAP_SERVER"].strip()
     raw = re.sub(r"^ldaps?://", "", raw, flags=re.IGNORECASE).rstrip("/")
     host, _, port = raw.partition(":")
+
+    # A hostname is legitimately all-ASCII (letters/digits/hyphen/dot); any
+    # other character here is invisible copy-paste noise (BOM, NBSP, smart
+    # quotes, etc. from a wiki/Word doc/secrets UI). Python's socket/SSL
+    # layer only calls into the IDNA "nameprep" codec when a hostname isn't
+    # pure ASCII, and nameprep is where this crashes
+    # ("TypeError: category() argument must be a unicode character, not
+    # str" from stringprep.in_table_c12) — so stripping non-ASCII noise
+    # here avoids that code path entirely rather than chasing the bug
+    # inside stringprep itself.
+    host = re.sub(r"[^A-Za-z0-9.-]", "", host)
+    if not host:
+        raise RuntimeError("LDAP_SERVER has no valid hostname characters after sanitizing")
+
     kwargs = {"use_ssl": use_ssl, "tls": tls}
     if port:
         kwargs["port"] = int(port)
@@ -299,6 +310,11 @@ store = DbStore() if USE_DB else FakeStore()
 @app.route("/")
 def index():
     return send_from_directory(BASE_DIR / "public", "index.html")
+
+
+@app.route("/api/whoami")
+def api_whoami():
+    return jsonify({"username": session.get("username")})
 
 
 @app.route("/api/projects")

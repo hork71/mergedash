@@ -76,6 +76,11 @@ function sendJson(res, status, data) {
 
 async function handleApi(req, res, url) {
   try {
+    if (url.pathname === '/api/whoami') {
+      // No authentication in this backend — always reports logged-out so
+      // the shared frontend's sign-out button stays hidden.
+      return sendJson(res, 200, { username: null });
+    }
     if (url.pathname === '/api/projects') {
       return sendJson(res, 200, await store.projects());
     }
