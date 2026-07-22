@@ -84,8 +84,10 @@ Set `USE_LDAP=1` plus:
 - `LDAP_USER_ATTR` — attribute matched against the login username
   (default `sAMAccountName`)
 - `LDAP_BIND_DN` / `LDAP_BIND_PASSWORD` — service account used to search AD
-- `LDAP_REQUIRED_GROUP_DN` — users must belong to this group (including via
-  nested groups) to be granted access
+- `LDAP_REQUIRED_GROUP_DNS` — semicolon-separated list of group DNs (`;`,
+  not `,`, since a DN's own RDN components are comma-separated); users must
+  belong to at least one of them (including via nested groups) to be
+  granted access
 - `LDAP_USE_SSL` — `1` (default) to use LDAPS, `0` for plaintext (test only)
 - `SECRET_KEY` — random secret used to sign the session cookie; required
   whenever `USE_LDAP=1`
@@ -96,7 +98,7 @@ LDAP_SERVER=ldaps://ad.example.com:636 \
 LDAP_BASE_DN="DC=example,DC=com" \
 LDAP_BIND_DN="CN=svc-mergedash,OU=Service Accounts,DC=example,DC=com" \
 LDAP_BIND_PASSWORD=secret \
-LDAP_REQUIRED_GROUP_DN="CN=Mergedash Users,OU=Groups,DC=example,DC=com" \
+LDAP_REQUIRED_GROUP_DNS="CN=Mergedash Users,OU=Groups,DC=example,DC=com;CN=Mergedash Admins,OU=Groups,DC=example,DC=com" \
 SECRET_KEY=$(python3 -c "import secrets;print(secrets.token_hex(32))") \
 .venv/bin/python app.py
 ```

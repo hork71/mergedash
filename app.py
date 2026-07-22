@@ -54,8 +54,9 @@ def ldap_authenticate(username, password):
 
     Returns True iff the service account can search AD, exactly one user
     matches, a bind as that user's own DN with `password` succeeds, and
-    that user is a member (including nested groups) of
-    LDAP_REQUIRED_GROUP_DN. Never raises — any failure yields False.
+    that user is a member (including nested groups) of at least one of the
+    groups listed in LDAP_REQUIRED_GROUP_DNS. Never raises — any failure
+    yields False.
     """
     from ldap3 import Connection
     from ldap3.core.exceptions import LDAPException
@@ -63,7 +64,13 @@ def ldap_authenticate(username, password):
 
     user_attr = os.environ.get("LDAP_USER_ATTR", "sAMAccountName")
     base_dn = os.environ["LDAP_BASE_DN"]
-    group_dn = os.environ["LDAP_REQUIRED_GROUP_DN"]
+    # ';' (not ',') separates entries: DNs themselves contain commas
+    # between RDN components, so commas can't delimit a list of DNs.
+    group_dns = [
+        g.strip() for g in os.environ["LDAP_REQUIRED_GROUP_DNS"].split(";") if g.strip()
+    ]
+    if not group_dns:
+        return False
 
     service_conn = None
     user_conn = None
@@ -88,12 +95,15 @@ def ldap_authenticate(username, password):
         if not user_conn.bind():
             return False
 
+        group_clauses = "".join(
+            f"(memberOf:{REQUIRED_GROUP_MATCH_RULE}:={escape_filter_chars(g)})"
+            for g in group_dns
+        )
         service_conn.search(
             search_base=base_dn,
             search_filter=(
                 f"(&(distinguishedName={escape_filter_chars(user_dn)})"
-                f"(memberOf:{REQUIRED_GROUP_MATCH_RULE}:="
-                f"{escape_filter_chars(group_dn)}))"
+                f"(|{group_clauses}))"
             ),
             attributes=["distinguishedName"],
         )
