@@ -79,7 +79,8 @@ version for any AD-integrated or production deployment.
 
 Set `USE_LDAP=1` plus:
 
-- `LDAP_SERVER` — AD host, e.g. `ldaps://ad.example.com:636`
+- `LDAP_SERVER` — AD host, as `host` or `host:port` (no `ldap://`/`ldaps://`
+  scheme — `LDAP_USE_SSL` controls that), e.g. `ad.example.com:636`
 - `LDAP_BASE_DN` — search base, e.g. `DC=example,DC=com`
 - `LDAP_USER_ATTR` — attribute matched against the login username
   (default `sAMAccountName`)
@@ -94,7 +95,7 @@ Set `USE_LDAP=1` plus:
 
 ```sh
 USE_LDAP=1 \
-LDAP_SERVER=ldaps://ad.example.com:636 \
+LDAP_SERVER=ad.example.com:636 \
 LDAP_BASE_DN="DC=example,DC=com" \
 LDAP_BIND_DN="CN=svc-mergedash,OU=Service Accounts,DC=example,DC=com" \
 LDAP_BIND_PASSWORD=secret \

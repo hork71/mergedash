@@ -10,6 +10,7 @@ Data source:
 
 import json
 import os
+import re
 from pathlib import Path
 
 from flask import (
@@ -41,12 +42,27 @@ PUBLIC_PATHS = {"/login", "/logout"}
 
 
 def _ldap_server():
-    from ldap3 import ALL, Server, Tls
+    from ldap3 import Server, Tls
     import ssl
 
+    # get_info defaults to NONE: we only bind/search, never read schema, and
+    # fetching AD's live schema (get_info=ALL) is a known trigger for
+    # ldap3 parsing errors (e.g. "category() argument must be a unicode
+    # character, not str") against Active Directory.
     use_ssl = os.environ.get("LDAP_USE_SSL", "1") == "1"
     tls = Tls(validate=ssl.CERT_REQUIRED) if use_ssl else None
-    return Server(os.environ["LDAP_SERVER"], use_ssl=use_ssl, tls=tls, get_info=ALL)
+
+    # Strip any ldap(s):// scheme ourselves and pass a bare host[:port] —
+    # letting ldap3 parse a scheme+port URI itself has been observed to
+    # produce a malformed hostname that trips Python's IDNA/nameprep codec
+    # (the same "category() argument must be a unicode character" error).
+    raw = os.environ["LDAP_SERVER"].strip()
+    raw = re.sub(r"^ldaps?://", "", raw, flags=re.IGNORECASE).rstrip("/")
+    host, _, port = raw.partition(":")
+    kwargs = {"use_ssl": use_ssl, "tls": tls}
+    if port:
+        kwargs["port"] = int(port)
+    return Server(host, **kwargs)
 
 
 def ldap_authenticate(username, password):
