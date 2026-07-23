@@ -603,12 +603,13 @@
   // ignores whatever is typed into the search box.
   function downloadCsv() {
     const header = ['Project', 'MR', 'Title', 'State', 'Source branch', 'Target branch',
-                     'Author', 'Created', 'Merged', 'Merged by', 'Approved by', 'URL'];
+                     'Author', 'Created', 'Merged', 'Merged by', 'Approved by', 'Self-merged', 'URL'];
     const lines = [header.map(csvEscape).join(',')];
     for (const r of lastRows) {
       lines.push([
         r.project, r.iid, r.title, r.state, r.source_branch, r.target_branch,
-        r.author, r.created_at, r.merged_at, r.merged_by, r.approved_by, r.web_url,
+        r.author, r.created_at, r.merged_at, r.merged_by, r.approved_by,
+        isSelfMergedToProd(r) ? 'x' : '', r.web_url,
       ].map(csvEscape).join(','));
     }
     const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
