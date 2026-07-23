@@ -7,7 +7,9 @@ merged MRs — who merged and approved them.
 
 The web UI has a searchable project dropdown, start/end month dropdowns
 (populated from the data), and a **Go** button that renders one table per
-month.
+month. An **All projects** button (Flask backend only) renders a single
+combined table spanning every project for the selected month range, with
+a **Download CSV** button to export that combined result set.
 
 Two interchangeable backend implementations are included. Both serve the
 identical JSON API and the same frontend, so you can run either one:
@@ -116,7 +118,12 @@ Both backends expose the same three endpoints:
 - `GET /api/months` — sorted list of distinct months (`YYYY-MM`)
 - `GET /api/merges?project=<name>&from=<YYYY-MM>&to=<YYYY-MM>` — merge
   requests for one project within an inclusive month range, sorted newest
-  first. Returns `400` if any parameter is missing.
+  first. Returns `400` if `from`/`to` are missing.
+
+On the **Flask** backend, `project` is optional: omitting it returns merge
+requests across **all** projects for the month range (sorted by month
+descending, then project, then newest first), used by the "All projects"
+button. The Node.js backend still requires `project`.
 
 ## Setting up the real table
 

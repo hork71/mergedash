@@ -246,12 +246,15 @@ class FakeStore:
     def merges(self, project, date_from, date_to):
         rows = [
             r for r in self.rows
-            if r["project"] == project and date_from <= r["month"] <= date_to
+            if (project is None or r["project"] == project)
+            and date_from <= r["month"] <= date_to
         ]
-        rows.sort(
-            key=lambda r: (r["month"], r["created_at"], r["iid"]),
-            reverse=True,
-        )
+        # Chained stable sorts, least significant first, to get mixed
+        # directions: month DESC, project ASC, created_at DESC, iid DESC.
+        rows.sort(key=lambda r: r["iid"], reverse=True)
+        rows.sort(key=lambda r: r["created_at"], reverse=True)
+        rows.sort(key=lambda r: r["project"])
+        rows.sort(key=lambda r: r["month"], reverse=True)
         return rows
 
 
@@ -284,19 +287,21 @@ class DbStore:
         return [r[0] for r in rows]
 
     def merges(self, project, date_from, date_to):
+        project_clause = "AND project = %s " if project is not None else ""
+        params = (date_from, date_to, project) if project is not None else (date_from, date_to)
         rows = self._query(
-            """
-            SELECT month, iid, title, source_branch, target_branch, state, author,
+            f"""
+            SELECT project, month, iid, title, source_branch, target_branch, state, author,
                    to_char(created_at, 'YYYY-MM-DD') AS created_at,
                    to_char(merged_at, 'YYYY-MM-DD')  AS merged_at,
                    merged_by, approved_by, web_url
               FROM gitlabmerges
-             WHERE project = %s AND month >= %s AND month <= %s
-             ORDER BY month DESC, created_at DESC, iid DESC
+             WHERE month >= %s AND month <= %s {project_clause}
+             ORDER BY month DESC, project ASC, created_at DESC, iid DESC
             """,
-            (project, date_from, date_to),
+            params,
         )
-        cols = ("month", "iid", "title", "source_branch", "target_branch",
+        cols = ("project", "month", "iid", "title", "source_branch", "target_branch",
                 "state", "author", "created_at", "merged_at", "merged_by",
                 "approved_by", "web_url")
         return [dict(zip(cols, r)) for r in rows]
@@ -329,11 +334,11 @@ def api_months():
 
 @app.route("/api/merges")
 def api_merges():
-    project = request.args.get("project")
+    project = request.args.get("project") or None
     date_from = request.args.get("from")
     date_to = request.args.get("to")
-    if not project or not date_from or not date_to:
-        return jsonify({"error": "project, from and to are required"}), 400
+    if not date_from or not date_to:
+        return jsonify({"error": "from and to are required"}), 400
     return jsonify(store.merges(project, date_from, date_to))
 
 

@@ -122,6 +122,7 @@
   }
   #search-clear:hover { color: var(--fg); }
   #filter-status { color: var(--muted); font-size: .85rem; margin: 0 0 1rem; }
+  #download-csv { margin-bottom: 1rem; padding: .35rem 1rem; font-size: .85rem; }
   h2.month {
     font-size: 1rem;
     margin: 1.5rem 0 .5rem;
@@ -211,6 +212,7 @@
     <select id="to"></select>
   </div>
   <button id="go">Go</button>
+  <button id="go-all">All projects</button>
 </div>
 
 <main>
@@ -223,6 +225,7 @@
     </div>
   </div>
   <div id="filter-status"></div>
+  <button id="download-csv" type="button" hidden>Download CSV</button>
   <div id="results"></div>
 </main>
 
@@ -233,6 +236,10 @@
   // Rows from the most recent successful query, cached so the search box
   // can filter client-side without another network request.
   let lastRows = [];
+
+  // 'single' = one project, grouped by month (existing behavior);
+  // 'all' = every project in the range, one flat table.
+  let viewMode = 'single';
 
   // Merges into these branches must follow the four-eyes rule:
   // the author and the person merging must be different people.
@@ -420,11 +427,59 @@
       </table>`;
   }
 
+  // Same row layout as renderMonth, plus a leading Project column, as one
+  // flat table (no month grouping) spanning the whole queried range.
+  function renderAllProjects(rows) {
+    const body = rows.map((r) => {
+      const branches = `${r.source_branch ?? ''} → ${r.target_branch ?? ''}`;
+      const selfMerged = isSelfMergedToProd(r);
+      return `
+      <tr>
+        <td title="${esc(r.project)}">${esc(r.project)}</td>
+        <td class="num">${r.web_url
+          ? `<a href="${esc(r.web_url)}" target="_blank" rel="noopener">!${esc(r.iid)}</a>`
+          : `!${esc(r.iid)}`}</td>
+        <td title="${esc(r.title)}">${esc(r.title)}</td>
+        <td>${stateBadge(r.state)}</td>
+        <td title="${esc(branches)}">${esc(branches)}</td>
+        <td>${esc(r.author)}</td>
+        <td class="date">${esc(r.created_at)}</td>
+        <td class="date">${esc(r.merged_at)}</td>
+        <td>${esc(r.merged_by)}${selfMerged
+          ? ' <span class="warn" title="Merged into production by the author — four-eyes rule violated">⚠ self-merged</span>'
+          : ''}</td>
+        <td>${esc(r.approved_by)}</td>
+      </tr>`;
+    }).join('');
+
+    return `
+      <h2 class="month">All projects (${rows.length} MR${rows.length === 1 ? '' : 's'})</h2>
+      <table>
+        <colgroup>
+          <col style="width:12%">
+          <col style="width:5%">
+          <col style="width:16%">
+          <col style="width:6%">
+          <col style="width:12%">
+          <col style="width:9%">
+          <col style="width:6%">
+          <col style="width:6%">
+          <col style="width:14%">
+          <col style="width:14%">
+        </colgroup>
+        <thead><tr>
+          <th>Project</th><th>MR</th><th>Title</th><th>State</th><th>Branches</th><th>Author</th>
+          <th>Created</th><th>Merged</th><th>Merged by</th><th>Approved by</th>
+        </tr></thead>
+        <tbody>${body}</tbody>
+      </table>`;
+  }
+
   // Lowercase, space-joined text of every visible column for one row,
   // used as the haystack for the search box.
   function searchHaystack(r) {
     return [
-      r.iid, r.title, r.state, r.source_branch, r.target_branch, r.author,
+      r.project, r.iid, r.title, r.state, r.source_branch, r.target_branch, r.author,
       r.created_at, r.merged_at, r.merged_by, r.approved_by,
     ].map((v) => (v ?? '')).join(' ').toLowerCase();
   }
@@ -449,6 +504,11 @@
       return;
     }
 
+    if (viewMode === 'all') {
+      results.innerHTML = renderAllProjects(matched);
+      return;
+    }
+
     // Group by month (already sorted newest month first by the server).
     const byMonth = new Map();
     for (const r of matched) {
@@ -470,6 +530,8 @@
     if (!project) { status.textContent = 'Please select a project.'; return; }
     if (from > to) { status.textContent = 'Start month is after end month.'; return; }
 
+    viewMode = 'single';
+    $('download-csv').hidden = true;
     status.textContent = 'Loading…';
     $('filter-status').textContent = '';
     results.innerHTML = '';
@@ -495,7 +557,71 @@
     }
   }
 
+  async function goAll() {
+    const from = $('from').value;
+    const to = $('to').value;
+    const status = $('status');
+    const results = $('results');
+
+    if (from > to) { status.textContent = 'Start month is after end month.'; return; }
+
+    viewMode = 'all';
+    status.textContent = 'Loading…';
+    $('filter-status').textContent = '';
+    $('download-csv').hidden = true;
+    results.innerHTML = '';
+    try {
+      const rows = await fetchJson('/api/merges?' + new URLSearchParams({ from, to }));
+      lastRows = rows;
+
+      if (!rows.length) {
+        status.textContent = '';
+        results.innerHTML = '<p class="empty">No merge requests found for this selection.</p>';
+        return;
+      }
+
+      const violations = rows.filter(isSelfMergedToProd).length;
+      status.textContent =
+        `${rows.length} merge request${rows.length === 1 ? '' : 's'} across all projects` +
+        (violations
+          ? ` — ⚠ ${violations} self-merged into production`
+          : '');
+      $('download-csv').hidden = false;
+      renderFiltered($('search').value);
+    } catch (err) {
+      status.textContent = 'Error: ' + err.message;
+    }
+  }
+
+  function csvEscape(v) {
+    const s = String(v ?? '');
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+
+  // Always exports the full, unfiltered lastRows for the current
+  // all-projects query — ignores whatever is typed into the search box.
+  function downloadCsv() {
+    const header = ['Project', 'MR', 'Title', 'State', 'Source branch', 'Target branch',
+                     'Author', 'Created', 'Merged', 'Merged by', 'Approved by', 'URL'];
+    const lines = [header.map(csvEscape).join(',')];
+    for (const r of lastRows) {
+      lines.push([
+        r.project, r.iid, r.title, r.state, r.source_branch, r.target_branch,
+        r.author, r.created_at, r.merged_at, r.merged_by, r.approved_by, r.web_url,
+      ].map(csvEscape).join(','));
+    }
+    const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `mergedash-all-projects_${$('from').value}_${$('to').value}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   $('go').addEventListener('click', go);
+  $('go-all').addEventListener('click', goAll);
+  $('download-csv').addEventListener('click', downloadCsv);
   $('search').addEventListener('input', () => {
     $('search-clear').hidden = !$('search').value;
     renderFiltered($('search').value);
