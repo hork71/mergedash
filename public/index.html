@@ -551,6 +551,7 @@
         (violations
           ? ` — ⚠ ${violations} self-merged into production`
           : '');
+      $('download-csv').hidden = false;
       renderFiltered($('search').value);
     } catch (err) {
       status.textContent = 'Error: ' + err.message;
@@ -598,8 +599,8 @@
     return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   }
 
-  // Always exports the full, unfiltered lastRows for the current
-  // all-projects query — ignores whatever is typed into the search box.
+  // Always exports the full, unfiltered lastRows for the current query —
+  // ignores whatever is typed into the search box.
   function downloadCsv() {
     const header = ['Project', 'MR', 'Title', 'State', 'Source branch', 'Target branch',
                      'Author', 'Created', 'Merged', 'Merged by', 'Approved by', 'URL'];
@@ -612,9 +613,12 @@
     }
     const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
+    const label = viewMode === 'all'
+      ? 'all-projects'
+      : $('project').value.trim().replace(/[^a-z0-9]+/gi, '-');
     const a = document.createElement('a');
     a.href = url;
-    a.download = `mergedash-all-projects_${$('from').value}_${$('to').value}.csv`;
+    a.download = `mergedash-${label}_${$('from').value}_${$('to').value}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
