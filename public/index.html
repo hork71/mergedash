@@ -567,6 +567,7 @@
     if (from > to) { status.textContent = 'Start month is after end month.'; return; }
 
     viewMode = 'all';
+    $('project').value = '';
     status.textContent = 'Loading…';
     $('filter-status').textContent = '';
     $('download-csv').hidden = true;
